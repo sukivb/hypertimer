@@ -7,7 +7,7 @@
  * Run a timer at a faster or slower pace than real-time, or run discrete events.
  *
  * @version 2.1.3
- * @date    2015-12-08
+ * @date    2016-06-17
  *
  * @license
  * Copyright (C) 2014-2015 Almende B.V., http://almende.com
@@ -134,7 +134,7 @@ return /******/ (function(modules) { // webpackBootstrap
     var configuredTime = null;// only used for returning the configured time on .config()
     var master = null;        // url of master, will run as slave
     var port = null;          // port to serve as master
-
+    var federateCount = 0;    // number of timers registered to master
     // properties
     var running = false;              // true when running
     var startTime = null;             // timestamp. the moment in real-time when hyperTime was set
@@ -436,6 +436,7 @@ return /******/ (function(modules) { // webpackBootstrap
       timer.clear();
       if (client) client.destroy();
       if (server) server.destroy();
+      timer.emit('destroy');
     };
 
     /**
@@ -451,7 +452,8 @@ return /******/ (function(modules) { // webpackBootstrap
         deterministic: deterministic,
         time: configuredTime,
         master: master,
-        port: port
+        port: port,
+        federateCount: federateCount
       }
     }
 
@@ -481,6 +483,12 @@ return /******/ (function(modules) { // webpackBootstrap
     function _setConfig(options) {
       if ('deterministic' in options) {
         deterministic = options.deterministic ? true : false;
+      }
+
+      if ('federateCount' in options) {
+        federateCount = options.federateCount;
+      } else {
+        federateCount = 0;
       }
 
       if ('paced' in options) {
@@ -530,6 +538,8 @@ return /******/ (function(modules) { // webpackBootstrap
 
           client.on('change', function (time)   { applyConfig({time: time}) });
           client.on('config', function (config) { applyConfig(config) });
+          client.on('pause', function (now) { timer.pause() });
+          client.on('continue', function (now) {timer.continue() });
           client.on('error',  function (err)    { timer.emit('error', err) });
         }
       }
@@ -582,6 +592,10 @@ return /******/ (function(modules) { // webpackBootstrap
       timeout.time = timeout.firstTime + timeout.occurrence * timeout.interval;
     }
 
+    timer.getFederateCount = function () {
+      return _getConfig().federateCount;
+    }
+
     /**
      * Add a timeout to the queue. After the queue has been changed, the queue
      * must be rescheduled by executing _reschedule()
@@ -606,7 +620,7 @@ return /******/ (function(modules) { // webpackBootstrap
         timeouts.push(timeout);
       }
     }
-
+    var timeoutCount = {};
     /**
      * Execute a timeout
      * @param {{id: number, type: number, time: number, callback: function}} timeout
@@ -619,7 +633,8 @@ return /******/ (function(modules) { // webpackBootstrap
       // store the timeout in the queue with timeouts in progress
       // it can be cleared when a clearTimeout is executed inside the callback
       current[timeout.id] = timeout;
-
+      timeoutCount[timeout.time] = (typeof timeoutCount[timeout.time] != 'undefined') ? timeoutCount[timeout.time] + 1 : 1;
+      timer.getFederateCount();
       function finish() {
         // in case of an interval we have to reschedule on next cycle
         // interval must not be cleared while executing the callback
@@ -638,6 +653,7 @@ return /******/ (function(modules) { // webpackBootstrap
 
       // execute the callback
       try {
+       
         if (timeout.callback.length == 0) {
           // synchronous timeout,  like `timer.setTimeout(function () {...}, delay)`
           timeout.callback();
@@ -1235,38 +1251,69 @@ return /******/ (function(modules) { // webpackBootstrap
   var emitter = __webpack_require__(22);
   var debug = __webpack_require__(33)('hypertimer:master');
 
+
   exports.createMaster = function (now, config, port) {
     var master = new WebSocket.Server({port: port});
-
+    var queue = {};
+    var timeCount = {};
     master.on('connection', function (ws) {
       debug('new connection');
 
       var _emitter = emitter(ws);
-
       // ping timesync messages (for the timesync module)
       _emitter.on('time', function (data, callback) {
         var time = now();
-        callback(time);
-        debug('send time ' + new Date(time).toISOString());
+        if (typeof timeCount[data] == 'undefined') {
+          master.broadcast('pause',data);
+          timeCount[data] = 1;
+        } else {
+          timeCount[data] = timeCount[data] + 1;
+        }
+        debug('federates done: ' +  timeCount[data] + ' of ' + sanitizedConfig().federateCount);
+
+        debug('queued time ' + new Date(time).toISOString());
+        if (typeof queue[data] == 'undefined') {
+          queue[data] = [callback];
+        } else {
+          queue[data].push(callback);
+        }
+        if (timeCount[data] == sanitizedConfig().federateCount) {
+          for (var i = 0; i < queue[data].length; i++) {
+            queue[data][i](time);
+            debug('send time ' + new Date(time).toISOString());
+          }
+          delete queue[data];
+          delete timeCount[data];
+          master.broadcast('continue',data);
+        }
+      });
+      ws.on('close', function() {
+        for (var i = 0; i < master.clients.length; i++) {
+          if (master.clients[i] == ws) {
+            master.clients.splice(i, 1);
+            break;
+          }
+        }
       });
 
-      // send the masters config to the new connection
-      var config = sanitizedConfig();
-      debug('send config', config);
-      _emitter.send('config', config);
 
       ws.emitter = _emitter; // used by broadcast
+      master.broadcastConfig();
     });
+
+
+    master.broadcastConfig = function () {
+      // send the masters config to the connected clients
+      var conf = sanitizedConfig();
+      debug('send config', conf);
+      master.broadcast('config', conf);
+    };
 
     master.broadcast = function (event, data) {
       debug('broadcast', event, data);
       master.clients.forEach(function (client) {
         client.emitter.send(event, data);
       });
-    };
-
-    master.broadcastConfig = function () {
-      master.broadcast('config', sanitizedConfig());
     };
 
     master.destroy = function() {
@@ -1279,6 +1326,7 @@ return /******/ (function(modules) { // webpackBootstrap
       delete curr.time;
       delete curr.master;
       delete curr.port;
+      curr.federateCount = master.clients.length;
       return curr;
     }
 
@@ -1319,8 +1367,9 @@ return /******/ (function(modules) { // webpackBootstrap
     var emitter = eventEmitter({
       socket: socket,
       send: send,
-      request: request
+      request: request,
     });
+    
 
     /**
      * Send an event
@@ -1346,13 +1395,13 @@ return /******/ (function(modules) { // webpackBootstrap
       return new Promise(function (resolve, reject) {
         // put the data in an envelope with id
         var id = getId();
+        if (typeof data == 'undefined')
+            data = id;
         var envelope = {
           event: event,
           id: id,
           data: data
         };
-
-        // add the request to the list with requests in progress
         queue[id] = {
           resolve: resolve,
           reject: reject,
@@ -1361,9 +1410,11 @@ return /******/ (function(modules) { // webpackBootstrap
             reject(new Error('Timeout'));
           }, TIMEOUT)
         };
+        
 
         debug('request', envelope);
         socket.send(JSON.stringify(envelope));
+
       }).catch(function (err) {console.log('ERROR', err)});
     }
 
@@ -1374,7 +1425,9 @@ return /******/ (function(modules) { // webpackBootstrap
     socket.onmessage = function (event) {
       var data = event.data;
       var envelope = JSON.parse(data);
+
       debug('receive', envelope);
+
 
       // match the request from the id in the response
       var request = queue[envelope.id];

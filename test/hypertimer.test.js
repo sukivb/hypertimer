@@ -44,7 +44,8 @@ describe('hypertimer', function () {
         deterministic: true,
         time: null,
         master: null,
-        port: null
+        port: null,
+        federateCount:0
       });
 
       var timer2 = hypertimer({paced: false, rate: 2, deterministic: false, time: 2524651200000});
@@ -54,7 +55,8 @@ describe('hypertimer', function () {
         deterministic: false,
         time: '2050-01-01T12:00:00.000Z',
         master: null,
-        port: null
+        port: null,
+        federateCount:0
       });
     });
 
@@ -1489,13 +1491,14 @@ describe('hypertimer', function () {
   });
 
   describe('events', function () {
-    // note: the `config` event is tested for in synchronization.test.js
+    // note: the `config` event is tested for in discreteSync.test.js
 
     it('should emit an error event', function (done) {
       var timer = hypertimer();
 
       timer.on('error', function (err) {
         assert.equal(err.toString(), 'ReferenceError: a is not defined');
+        timer.destroy();
         done();
       });
 

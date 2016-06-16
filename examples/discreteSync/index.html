@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Master/Slave demo</title>
+    <!-- Load es6-shim for Promise support -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/es6-shim/0.25.3/es6-shim.min.js"></script>
+    <script src="../../dist/hypertimer.js"></script>
+
+</head>
+<body>
+<div id="logs"></div>
+<script type="application/javascript">
+    var logs = [];
+    function log () {
+        var args = [];
+        for (var i = 0; i < arguments.length; i++) {
+            var arg = arguments[i];
+            args[i] = ((typeof arg === 'string') ? arg : JSON.stringify(arg)) + ' ';
+        }
+
+        logs.unshift(args.join(' '));
+
+        document.getElementById('logs').innerHTML = logs.join('<br>');
+    }
+</script>
+
+
+<!-- Read master config -->
+<script src="config.js" type="application/javascript"></script>
+
+<!-- Start Slave timer 1 -->
+<script src="slave1.js" type="application/javascript"></script>
+
+
+<!-- Start Slave timer 2 -->
+<script src="slave2.js" type="application/javascript"></script>
+</body>
+</html>
