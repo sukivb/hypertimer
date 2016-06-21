@@ -7,7 +7,7 @@
  * Run a timer at a faster or slower pace than real-time, or run discrete events.
  *
  * @version 2.1.3
- * @date    2016-06-17
+ * @date    2016-06-21
  *
  * @license
  * Copyright (C) 2014-2015 Almende B.V., http://almende.com
@@ -92,6 +92,7 @@ return /******/ (function(modules) { // webpackBootstrap
   var createMaster = __webpack_require__(19).createMaster;
   var createSlave = __webpack_require__(35).createSlave;
   var util = __webpack_require__(38);
+  var debug = __webpack_require__(33)('hypertimer:root');
 
   // enum for type of timeout
   var TYPE = {
@@ -127,6 +128,7 @@ return /******/ (function(modules) { // webpackBootstrap
    *                                        current system time.
    */
   function hypertimer(options) {
+    debug("A timer is instantiated with options: "+JSON.stringify(options));
     // options
     var paced = true;
     var rate = 1;             // number of milliseconds per milliseconds
@@ -213,6 +215,8 @@ return /******/ (function(modules) { // webpackBootstrap
      */
     timer['continue'] = function() {
       startTime = util.systemNow();
+      debug('continued at: '+timer.getTime());
+      timer.emit('continue', timer.getTime());
       running = true;
 
       // reschedule running timeouts
@@ -224,6 +228,8 @@ return /******/ (function(modules) { // webpackBootstrap
      */
     timer.pause = function() {
       hyperTime = timer.now();
+      debug('paused at: '+timer.getTime());
+      timer.emit('pause', timer.getTime());
       startTime = null;
       running = false;
 
@@ -536,10 +542,20 @@ return /******/ (function(modules) { // webpackBootstrap
             timer.emit('config', curr, prev);
           }
 
+          function applyPause(time) {
+            timer.pause();
+          }
+
+          function applyContinue(time) {
+            timer.continue();
+          }
+
+
+
           client.on('change', function (time)   { applyConfig({time: time}) });
           client.on('config', function (config) { applyConfig(config) });
-          client.on('pause', function (now) { timer.pause() });
-          client.on('continue', function (now) {timer.continue() });
+          client.on('pause', function (time) { applyPause(time) });
+          client.on('continue', function (time) {applyContinue(time) });
           client.on('error',  function (err)    { timer.emit('error', err) });
         }
       }
@@ -634,7 +650,6 @@ return /******/ (function(modules) { // webpackBootstrap
       // it can be cleared when a clearTimeout is executed inside the callback
       current[timeout.id] = timeout;
       timeoutCount[timeout.time] = (typeof timeoutCount[timeout.time] != 'undefined') ? timeoutCount[timeout.time] + 1 : 1;
-      timer.getFederateCount();
       function finish() {
         // in case of an interval we have to reschedule on next cycle
         // interval must not be cleared while executing the callback
@@ -1278,13 +1293,13 @@ return /******/ (function(modules) { // webpackBootstrap
           queue[data].push(callback);
         }
         if (timeCount[data] == sanitizedConfig().federateCount) {
+          master.broadcast('continue',data);
           for (var i = 0; i < queue[data].length; i++) {
             queue[data][i](time);
             debug('send time ' + new Date(time).toISOString());
           }
           delete queue[data];
           delete timeCount[data];
-          master.broadcast('continue',data);
         }
       });
       ws.on('close', function() {
@@ -2231,7 +2246,14 @@ return /******/ (function(modules) { // webpackBootstrap
 
   module.exports = Debug || function () {
     // empty stub when in the browser
-    return function () {};
+        var moduleName = arguments[0];
+    return function () {
+      var logger = (typeof log == 'undefined') ? console.log : log;
+      var message = moduleName + " "+ arguments[0];
+      if (typeof arguments[1] != 'undefined')
+          message += " " + JSON.stringify(arguments[1]);
+      logger(message);
+    };
   };
 
 

@@ -14,9 +14,10 @@
         log('Slave2: Config changed:', JSON.stringify(config));
         if (config.federateCount == 2) {
             timer.setTimeout(doStuff, 0);
-            timer.continue();
+            //timer.continue();
         }
     });
+
 
     // initially, the system time is returned as we're not yet connected to the master
     log('Slave2: start', timer.getTime().toISOString());
