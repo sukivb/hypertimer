@@ -12,5 +12,9 @@ var timer = hypertimer({
 console.log('Master listening at ws://localhost:'+port);
 
 timer.setInterval(function() {
-  console.log("master:"+timer.getTime());
+    if (timer.getFederateCount() == 0) {
+      console.log('done');
+      timer.destroy();
+    } else
+      console.log("("+timer.now()+") master: "+timer.getTime());
 }, 10000);

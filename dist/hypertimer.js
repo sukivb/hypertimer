@@ -440,6 +440,7 @@ return /******/ (function(modules) { // webpackBootstrap
      * to a master or to slave timers.
      */
     timer.destroy = function () {
+      timer.emit('beforeDestroy');
       timer.clear();
       if (client) client.destroy();
       if (server) server.destroy();
@@ -483,6 +484,9 @@ return /******/ (function(modules) { // webpackBootstrap
       }
     }
 
+    timer.setFederateCount = function (count) {
+      federateCount = count;
+    };
     /**
      * Change configuration
      * @param {{paced: boolean, rate: number, deterministic: boolean, time: *, master: *}} options
@@ -561,7 +565,6 @@ return /******/ (function(modules) { // webpackBootstrap
           }
 
 
-
           client.on('change', function (time)   { applyConfig({time: time}) });
           client.on('config', function (config) { applyConfig(config) });
           client.on('pause', function (time) { applyPause(time) });
@@ -580,7 +583,17 @@ return /******/ (function(modules) { // webpackBootstrap
         port = options.port;
         if (options.port) {
           server = createMaster(timer.now, timer.config, options.port);
+          function unRegisterFederate(count) {
+            debug("Removing federate "+count);
+            timer.setFederateCount(count-1);
+          }
+          function registerFederate(count) {
+            debug("Adding federate "+count);
+            timer.setFederateCount(count);
+          }
+          server.on('federate_on', function(count){ registerFederate(count)});
           server.on('pause', function (time) { applyPause(time) });
+          server.on('federate_gone', function(count){ unRegisterFederate(count)});
           server.on('continue', function (time) {applyContinue(time) });
           server.on('error', function (err) { timer.emit('error', err) });
         }
@@ -621,7 +634,7 @@ return /******/ (function(modules) { // webpackBootstrap
     }
 
     timer.getFederateCount = function () {
-      return _getConfig().federateCount;
+      return federateCount;
     }
 
 
@@ -653,7 +666,6 @@ return /******/ (function(modules) { // webpackBootstrap
         timeouts.push(timeout);
       }
     }
-    var timeoutCount = {};
     /**
      * Execute a timeout
      * @param {{id: number, type: number, time: number, callback: function}} timeout
@@ -666,7 +678,6 @@ return /******/ (function(modules) { // webpackBootstrap
       // store the timeout in the queue with timeouts in progress
       // it can be cleared when a clearTimeout is executed inside the callback
       current[timeout.id] = timeout;
-      timeoutCount[timeout.time] = (typeof timeoutCount[timeout.time] != 'undefined') ? timeoutCount[timeout.time] + 1 : 1;
       function finish() {
         // in case of an interval we have to reschedule on next cycle
         // interval must not be cleared while executing the callback
@@ -1291,7 +1302,8 @@ return /******/ (function(modules) { // webpackBootstrap
     var timeCount = {};
     master.on('connection', function (ws) {
       debug('new connection');
-
+      debug('will emit federate on '+sanitizedConfig().federateCount);
+      master.emit('federate_on', sanitizedConfig().federateCount);
       var _emitter = emitter(ws);
       // ping timesync messages (for the timesync module)
       _emitter.on('time', function (data, callback) {
@@ -1313,18 +1325,20 @@ return /******/ (function(modules) { // webpackBootstrap
           queue[time_token].push(callback);
         }
         if (timeCount[time_token] == sanitizedConfig().federateCount) {
+          master.broadcast('continue', time_token);
           if (queue[time_token].length > 0) {
             for (var i = 0; i < queue[time_token].length; i++) {
             queue[time_token][i](time);
             debug('send time ' + new Date(time).toISOString());
           }
-            master.broadcast('continue', time_token);
             delete queue[time_token];
             delete timeCount[time_token];
           }
         }
       });
       ws.on('close', function() {
+        debug('will emit federate gone '+(sanitizedConfig().federateCount+1));
+        master.emit('federate_gone', sanitizedConfig().federateCount+1);
         for (var i = 0; i < master.clients.length; i++) {
           if (master.clients[i] == ws) {
             master.clients.splice(i, 1);
@@ -2320,7 +2334,7 @@ return /******/ (function(modules) { // webpackBootstrap
 
       clearInterval(syncTimer);
       syncTimer = null;
-
+      
       ws.close();
 
       debug('destroyed');

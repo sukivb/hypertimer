@@ -14,7 +14,6 @@
         log('Slave2: Config changed:', JSON.stringify(config));
         if (config.federateCount == 2) {
             timer.setTimeout(doStuff, 0);
-            //timer.continue();
         }
     });
 
