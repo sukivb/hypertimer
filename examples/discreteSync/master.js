@@ -5,18 +5,12 @@ var timer = hypertimer({
   paced:false,
   port: port,
   time: time,
-  rate: 1
+  rate: 1,
+  bootstrapFederateCount: 2
 });
 
 console.log('Master listening at ws://localhost:'+port);
 
-
-
-// set an interval. as soon as the timer is connected to the master timer,
-// time and rate will jump to the masters configuration.
-var interval = 1000; // milliseconds
-timer.pause();
-timer.setInterval(function (done) {
-  console.log('Master: time', timer.getTime().toISOString());
-  done();
-}, interval, time);
+timer.setInterval(function() {
+  console.log("master:"+timer.getTime());
+}, 10000);

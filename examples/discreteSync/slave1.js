@@ -60,7 +60,10 @@
 
             timer.setTimeout(function () {
                 log('Slave1: Timeout D');
-                timer.destroy();
+                timer.setTimeout(function () {
+                    log('Slave1: Timeout G (should be only slave1 after F)');
+                    timer.destroy();
+                }, 90000);
             }, 10000);
         }, 15000);
     };

@@ -45,7 +45,8 @@ describe('hypertimer', function () {
         time: null,
         master: null,
         port: null,
-        federateCount:0
+        federateCount:0,
+        bootstrapFederateCount: 0
       });
 
       var timer2 = hypertimer({paced: false, rate: 2, deterministic: false, time: 2524651200000});
@@ -56,7 +57,8 @@ describe('hypertimer', function () {
         time: '2050-01-01T12:00:00.000Z',
         master: null,
         port: null,
-        federateCount:0
+        federateCount:0,
+        bootstrapFederateCount: 0
       });
     });
 

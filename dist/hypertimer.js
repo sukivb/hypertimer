@@ -7,7 +7,7 @@
  * Run a timer at a faster or slower pace than real-time, or run discrete events.
  *
  * @version 2.1.3
- * @date    2016-06-21
+ * @date    2016-06-22
  *
  * @license
  * Copyright (C) 2014-2015 Almende B.V., http://almende.com
@@ -137,6 +137,7 @@ return /******/ (function(modules) { // webpackBootstrap
     var master = null;        // url of master, will run as slave
     var port = null;          // port to serve as master
     var federateCount = 0;    // number of timers registered to master
+    var bootstrapFederateCount = 0; // number of timers that have to be registered to the master to start the timer.
     // properties
     var running = false;              // true when running
     var startTime = null;             // timestamp. the moment in real-time when hyperTime was set
@@ -459,7 +460,8 @@ return /******/ (function(modules) { // webpackBootstrap
         time: configuredTime,
         master: master,
         port: port,
-        federateCount: federateCount
+        federateCount: federateCount,
+        bootstrapFederateCount: bootstrapFederateCount
       }
     }
 
@@ -524,12 +526,28 @@ return /******/ (function(modules) { // webpackBootstrap
         rate = newRate;
       }
 
+      if ('bootstrapFederateCount' in options) {
+        bootstrapFederateCount = options['bootstrapFederateCount'];
+      }
+
+
+      function applyPause(time) {
+        timer.pause();
+      }
+
+      function applyContinue(time) {
+        timer.continue();
+      }
+
       if ('master' in options) {
         // create a timesync slave, connect to master via a websocket
         if (client) {
           client.destroy();
           client = null;
         }
+
+
+
 
         master = options.master;
         if (options.master != null) {
@@ -540,14 +558,6 @@ return /******/ (function(modules) { // webpackBootstrap
             _setConfig(config);
             var curr = _getConfig();
             timer.emit('config', curr, prev);
-          }
-
-          function applyPause(time) {
-            timer.pause();
-          }
-
-          function applyContinue(time) {
-            timer.continue();
           }
 
 
@@ -570,6 +580,8 @@ return /******/ (function(modules) { // webpackBootstrap
         port = options.port;
         if (options.port) {
           server = createMaster(timer.now, timer.config, options.port);
+          server.on('pause', function (time) { applyPause(time) });
+          server.on('continue', function (time) {applyContinue(time) });
           server.on('error', function (err) { timer.emit('error', err) });
         }
       }
@@ -610,6 +622,11 @@ return /******/ (function(modules) { // webpackBootstrap
 
     timer.getFederateCount = function () {
       return _getConfig().federateCount;
+    }
+
+
+    timer.getBootstrapFederateCount = function () {
+      return _getConfig().bootstrapFederateCount;
     }
 
     /**
@@ -813,7 +830,8 @@ return /******/ (function(modules) { // webpackBootstrap
     });
 
     timer.config(options);  // apply options
-    timer.continue();       // start the timer
+    if (!client && timer.getBootstrapFederateCount() == timer.getFederateCount())
+      timer.continue();       // start the timer
 
     return timer;
   }
@@ -1278,28 +1296,32 @@ return /******/ (function(modules) { // webpackBootstrap
       // ping timesync messages (for the timesync module)
       _emitter.on('time', function (data, callback) {
         var time = now();
-        if (typeof timeCount[data] == 'undefined') {
-          master.broadcast('pause',data);
-          timeCount[data] = 1;
+        var time_token = data;
+        debug("timetoken: "+time_token);
+        if (typeof timeCount[time_token] == 'undefined') {
+          master.broadcast('pause',time_token);
+          timeCount[time_token] = 1;
         } else {
-          timeCount[data] = timeCount[data] + 1;
+          timeCount[time_token] = timeCount[time_token] + 1;
         }
-        debug('federates done: ' +  timeCount[data] + ' of ' + sanitizedConfig().federateCount);
+        debug('federates done: ' +  timeCount[time_token] + ' of ' + sanitizedConfig().federateCount);
 
         debug('queued time ' + new Date(time).toISOString());
-        if (typeof queue[data] == 'undefined') {
-          queue[data] = [callback];
+        if (typeof queue[time_token] == 'undefined') {
+          queue[time_token] = [callback];
         } else {
-          queue[data].push(callback);
+          queue[time_token].push(callback);
         }
-        if (timeCount[data] == sanitizedConfig().federateCount) {
-          master.broadcast('continue',data);
-          for (var i = 0; i < queue[data].length; i++) {
-            queue[data][i](time);
+        if (timeCount[time_token] == sanitizedConfig().federateCount) {
+          if (queue[time_token].length > 0) {
+            for (var i = 0; i < queue[time_token].length; i++) {
+            queue[time_token][i](time);
             debug('send time ' + new Date(time).toISOString());
           }
-          delete queue[data];
-          delete timeCount[data];
+            master.broadcast('continue', time_token);
+            delete queue[time_token];
+            delete timeCount[time_token];
+          }
         }
       });
       ws.on('close', function() {
@@ -1329,6 +1351,7 @@ return /******/ (function(modules) { // webpackBootstrap
       master.clients.forEach(function (client) {
         client.emitter.send(event, data);
       });
+      master.emit(event,data);
     };
 
     master.destroy = function() {

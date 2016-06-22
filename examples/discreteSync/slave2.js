@@ -49,6 +49,13 @@
                 // create another timeout inside the asynchronous timeout
                 timer.setTimeout(function () {
                     log('Slave2: Timeout C');
+                    timer.setTimeout(function () {
+                        log('Slave2: Timeout E (should be only slave2 after D)');
+                        timer.setTimeout(function () {
+                            log('Slave2: Timeout F (should be only slave2 after E)');
+                            timer.destroy();
+                        }, 40000);
+                    }, 40000);
                 }, 10000);
 
                 // once we are done with our asynchronous event, call done()
@@ -64,7 +71,6 @@
 
             timer.setTimeout(function () {
                 log('Slave2: Timeout D');
-                timer.destroy();
             }, 10000);
         }, 15000);
     };
