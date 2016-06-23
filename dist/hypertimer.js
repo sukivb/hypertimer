@@ -7,7 +7,7 @@
  * Run a timer at a faster or slower pace than real-time, or run discrete events.
  *
  * @version 2.1.3
- * @date    2016-06-22
+ * @date    2016-06-23
  *
  * @license
  * Copyright (C) 2014-2015 Almende B.V., http://almende.com
@@ -271,19 +271,21 @@ return /******/ (function(modules) { // webpackBootstrap
      * @return {number} Returns a timeoutId which can be used to cancel the
      *                  timeout using clearTimeout().
      */
-    timer.setTimeout = function(callback, delay) {
+    timer.setTimeout = function(callback, delay, optionalAnnotation) {
       var id = idSeq++;
       var timestamp = timer.now() + delay;
       if (isNaN(timestamp)) {
         throw new TypeError('delay must be a number');
       }
+      var annotation = (typeof optionalAnnotation == 'undefined') ? id+" @ "+timestamp : optionalAnnotation+" @ "+timestamp;
 
       // add a new timeout to the queue
       _queueTimeout({
         id: id,
         type: TYPE.TIMEOUT,
         time: timestamp,
-        callback: callback
+        callback: callback,
+        annotation: annotation
       });
 
       // reschedule the timeouts
@@ -304,16 +306,17 @@ return /******/ (function(modules) { // webpackBootstrap
      * @return {number} Returns a triggerId which can be used to cancel the
      *                  trigger using clearTrigger().
      */
-    timer.setTrigger = function (callback, time) {
+    timer.setTrigger = function (callback, time,optionalAnnotation) {
       var id = idSeq++;
       var timestamp = toTimestamp(time);
-
+      var annotation = (typeof optionalAnnotation == 'undefined') ? id+" @ "+timestamp : optionalAnnotation+" @ "+timestamp;
       // add a new timeout to the queue
       _queueTimeout({
         id: id,
         type: TYPE.TRIGGER,
         time: timestamp,
-        callback: callback
+        callback: callback,
+        annotation: annotation
       });
 
       // reschedule the timeouts
@@ -339,7 +342,7 @@ return /******/ (function(modules) { // webpackBootstrap
      * @return {number} Returns a intervalId which can be used to cancel the
      *                  trigger using clearInterval().
      */
-    timer.setInterval = function(callback, interval, firstTime) {
+    timer.setInterval = function(callback, interval, firstTime,optionalAnnotation) {
       var id = idSeq++;
 
       var _interval = Number(interval);
@@ -356,6 +359,7 @@ return /******/ (function(modules) { // webpackBootstrap
 
       var now = timer.now();
       var _time = (_firstTime != null) ? _firstTime : (now + _interval);
+      var annotation = (typeof optionalAnnotation == 'undefined') ? id+" @ "+_time : optionalAnnotation+" @ "+_time;
 
       var timeout = {
         id: id,
@@ -364,7 +368,8 @@ return /******/ (function(modules) { // webpackBootstrap
         time: _time,
         firstTime: _firstTime != null ? _firstTime : _time,
         occurrence: 0,
-        callback: callback
+        callback: callback,
+        annotation: annotation
       };
 
       if (_time < now) {
@@ -678,6 +683,7 @@ return /******/ (function(modules) { // webpackBootstrap
       // store the timeout in the queue with timeouts in progress
       // it can be cleared when a clearTimeout is executed inside the callback
       current[timeout.id] = timeout;
+      trace('did execute: '+timeout.annotation,timeout.time);
       function finish() {
         // in case of an interval we have to reschedule on next cycle
         // interval must not be cleared while executing the callback
@@ -696,13 +702,15 @@ return /******/ (function(modules) { // webpackBootstrap
 
       // execute the callback
       try {
-       
+
         if (timeout.callback.length == 0) {
           // synchronous timeout,  like `timer.setTimeout(function () {...}, delay)`
+          trace('execute synchronous: '+timeout.annotation,timeout.time);
           timeout.callback();
           finish();
         } else {
           // asynchronous timeout, like `timer.setTimeout(function (done) {...; done(); }, delay)`
+          trace('execute a-synchronous: '+timeout.annotation,timeout.time);
           timeout.callback(finish);
         }
       } catch (err) {
@@ -741,6 +749,7 @@ return /******/ (function(modules) { // webpackBootstrap
       return expired;
     }
 
+
     /**
      * Reschedule all queued timeouts
      * @private
@@ -766,14 +775,16 @@ return /******/ (function(modules) { // webpackBootstrap
         var time = next.time;
         var delay = time - timer.now();
         var realDelay = paced ? delay / rate : 0;
-
+        trace("Scheduling timeout: "+next.annotation,time);
         function onTimeout() {
           // when running in non-paced mode, update the hyperTime to
           // adjust the time of the current event
+          var oldHyperTime = hyperTime;
           if (!paced) {
             hyperTime = (time > hyperTime && isFinite(time)) ? time : hyperTime;
           }
 
+          trace("update hyperTime from "+oldHyperTime+" to "+hyperTime+" (delta:"+(hyperTime-oldHyperTime)+" )",time);
           // grab all expired timeouts from the queue
           var expired = _getExpiredTimeouts(time);
           // note: expired.length can never be zero (on every change of the queue, we reschedule)
@@ -783,6 +794,7 @@ return /******/ (function(modules) { // webpackBootstrap
             // in paced mode, we fire all timeouts in parallel,
             // and don't await their completion (they can do async operations)
             expired.forEach(function (timeout) {
+              trace("call: "+timeout.annotation,time);
               _execTimeout(timeout);
             });
 
@@ -796,6 +808,7 @@ return /******/ (function(modules) { // webpackBootstrap
             function next() {
               var timeout = expired.shift();
               if (timeout) {
+                trace("call: "+timeout.annotation,time);
                 _execTimeout(timeout, next);
               }
               else {
@@ -813,6 +826,17 @@ return /******/ (function(modules) { // webpackBootstrap
       }
     }
 
+
+    function trace(log,time) {
+      var nowTime = timer.now();
+      if (typeof time == 'undefined')
+        time = nowTime;
+      var tStr = "";
+      if (time != nowTime)
+        tStr = "offset:"+(nowTime - time)+" exec:";
+      tStr += nowTime;
+      debug("(@t "+tStr+") EVENT TRACE: "+(paced ? " (paced) " : " (unpaced) ")+log);
+    }
     /**
      * Convert a Date, number, or ISOString to a number timestamp,
      * and validate whether it's a valid Date. The number Infinity is also

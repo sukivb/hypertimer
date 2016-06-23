@@ -6,18 +6,30 @@
         master: 'ws://localhost:' + port
     });
 
+
+    function myLog () {
+        var args = [];
+        for (var i = 0; i < arguments.length; i++) {
+            var arg = arguments[i];
+            args[i] = ((typeof arg === 'string') ? arg : JSON.stringify(arg)) + ' ';
+        }
+        log('('+timer.now()+') slave 2 :: '+args.join(' '));
+    }
+
     timer.on('error', function (err) {
-        log('Slave1: Error:', err);
+        myLog('Slave1: Error:', err);
     });
 
     timer.on('config', function (config) {
-        log('Slave1: Config changed:', JSON.stringify(config));
-        if (config.federateCount == 2)
-            timer.setTimeout(doStuff,0);
+        myLog('Slave1: Config changed:', JSON.stringify(config));
+    });
+
+    timer.once('config', function (config) {
+        timer.setTimeout(doStuff,0);
     });
 
 // initially, the system time is returned as we're not yet connected to the master
-    log('Slave1: start', timer.getTime().toISOString());
+    myLog('Slave1: start', timer.getTime().toISOString());
 
     var doStuff = function () {
 
@@ -33,38 +45,38 @@
 
 // create an asynchronous timeout, having a callback parameter done
         timer.setTimeout(function (done) {
-            log('Slave1: Timeout A');
+            myLog('Slave1: Timeout A');
 
             // perform an asynchronous action inside the timeout
             getTemperatureIn('rotterdam,nl', function (err, temp) {
                 if (err)
-                    log('Slave1: got response from API: '+err);
+                    myLog('Slave1: got response from API: '+err);
                 else
-                    log('Slave1: The temperature in Rotterdam is ' + temp + ' celsius');
+                    myLog('Slave1: The temperature in Rotterdam is ' + temp + ' celsius');
 
                 // create another timeout inside the asynchronous timeout
                 timer.setTimeout(function () {
-                    log('Slave1: Timeout C');
-                }, 10000);
+                    myLog('Slave1: Timeout C');
+                }, 10000,"->C.1<-");
 
                 // once we are done with our asynchronous event, call done()
                 // so the hypertimer knows he can continue with a next event.
                 done();
             });
-        }, 10000);
+        }, 10000,"->A.1<-");
 
 // schedule two other events, where Timeout B occurs just after
 // Timeout A, and Timeout D occurs just after Timeout C.
         timer.setTimeout(function () {
-            log('Slave1: Timeout B (should be after temp info)');
+            myLog('Slave1: Timeout B (should be after temp info)');
 
             timer.setTimeout(function () {
-                log('Slave1: Timeout D');
+                myLog('Slave1: Timeout D');
                 timer.setTimeout(function () {
-                    log('Slave1: Timeout G (should be only slave1 after F)');
+                    myLog('Slave1: Timeout G (should be only slave1 after F)');
                     timer.destroy();
-                }, 90000);
-            }, 10000);
-        }, 15000);
+                }, 90000,"->G.1<-");
+            }, 10000,"->D.1<-");
+        }, 15000,"->B.1<-");
     };
 })();
